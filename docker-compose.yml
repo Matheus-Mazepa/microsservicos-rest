@@ -1,0 +1,106 @@
+services:
+  master:
+    container_name: microservicos-app-master
+    build:
+      context: ./master
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: 'postgres'
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'password'
+      POSTGRES_DATABASE_MASTER: 'master'
+      NODE_1_URL: 'http://microservicos-app-node-1:3001'
+    volumes:
+      - ./master:/home/node/app
+    networks:
+      - microservicos-app-network
+    ports:
+      - "4000:3000"
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+    depends_on:
+      - postgres
+
+  node-1:
+    container_name: microservicos-app-node-1
+    build:
+      context: ./node-1
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: 'postgres'
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'password'
+      POSTGRES_DATABASE_NODE1: 'node_1'
+      NODE_2_URL: 'http://microservicos-app-node-2:3002'
+    restart: always
+    networks:
+      - microservicos-app-network
+    volumes:
+      - ./node-1:/home/node/app
+    ports:
+      - "4001:3001"
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+    depends_on:
+      - master
+
+  node-2:
+    container_name: microservicos-app-node-2
+    build:
+      context: ./node-2
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: 'postgres'
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'password'
+      POSTGRES_DATABASE_NODE2: 'node_2'
+      MASTER_URL: 'http://microservicos-app-master:3000'
+    restart: always
+    networks:
+      - microservicos-app-network
+    volumes:
+      - ./node-2:/home/node/app
+    ports:
+      - "4002:3002"
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+    depends_on:
+      - node-1
+
+  postgres:
+    build: postgres/.
+    container_name: microservicos-app-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_MULTIPLE_DATABASES: master,node_1,node_2
+    networks:
+      - microservicos-app-network
+    volumes:
+      - app-postgres-data:/var/lib/postgresql/data
+      - ./postgres/scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5434:5432"
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+
+  pumba:
+    image: gaiaadm/pumba:master
+    container_name: microservicos-pumba
+    command: "--interval=30s -r stop --duration=10s --restart microservicos-app-node-1 microservicos-app-node-2"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - node-1
+      - node-2
+
+networks:
+  microservicos-app-network:
+    driver: bridge
+
+volumes:
+  app-postgres-data:
+    driver: local
